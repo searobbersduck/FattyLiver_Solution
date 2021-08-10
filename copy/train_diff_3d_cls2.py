@@ -20,7 +20,7 @@ import torch.backends.cudnn as cudnn
 import time
 import math
 from utils.utils import AverageMeter
-from datasets.FattyLiverDatasets import FattyLiverClsDatasetsDiff3D
+from datasets.FattyLiverDatasets import FattyLiverClsDatasetsDiff3D3
 
 import torch.nn.functional as F
 
@@ -134,11 +134,12 @@ def test(train_dataloader, model, criterion, epoch, display):
 
 def main():
 
-    batch_size = 8
+    batch_size = 2
     num_workers = 4
     phase = 'train'
     epochs = 10000
     display = 2
+    task_name = 'diff'
 
     config_file = '../config/config_diff_3d.json'
     config = None
@@ -152,14 +153,14 @@ def main():
     data_root = '../data/experiment_0/0.ori'
     config_train = '../data/config/config_train.txt'
     config_val = '../data/config/config_val.txt'
-    crop_size = [16, 384, 512]
+    crop_size = [32, 384, 512]
 
 
     print('====> create output model path:\t')
-    config["model_dir"] = '../data/experiment_0/9.model_cls2_exp1'
+    config["model_dir"] = '../data/experiment_Oct_cls2'
     os.makedirs(config["model_dir"], exist_ok=True)
-    time_stamp = time.strftime('%Y%m%d%H%M%S', time.localtime(time.time()))
-    model_dir = os.path.join(config["model_dir"], 'ct_pos_recogtion_{}'.format(time_stamp))
+    # time_stamp = time.strftime('%Y%m%d%H%M%S', time.localtime(time.time()))
+    model_dir = os.path.join(config["model_dir"], 'fattyliver_task_{}_best.pth'.format(task_name))
     os.makedirs(model_dir, exist_ok=True)
 
 
@@ -174,8 +175,8 @@ def main():
     criterion = nn.CrossEntropyLoss().cuda()
 
     if phase == 'train':
-        train_ds = FattyLiverClsDatasetsDiff3D(data_root, config_train, crop_size)
-        val_ds = FattyLiverClsDatasetsDiff3D(data_root, config_val, crop_size)
+        train_ds = FattyLiverClsDatasetsDiff3D3(data_root, config_train, task_name, crop_size)
+        val_ds = FattyLiverClsDatasetsDiff3D3(data_root, config_val, task_name, crop_size)
         train_dataloader = DataLoader(train_ds, batch_size=batch_size, 
                                      shuffle=True, num_workers=num_workers, 
                                      pin_memory=True)
@@ -201,16 +202,18 @@ def main():
             _, _ = train(train_dataloader, nn.DataParallel(model).cuda(), criterion, optimizer, epoch, display)
             acc, logger,tot_pred, tot_label, tot_pred = val(val_dataloader, nn.DataParallel(model).cuda(), criterion, epoch, display)
             print('val acc:\t{:.3f}'.format(acc))
+            #判断预测的标签非全1 or 非全0            
             if (np.all(tot_pred == 1) or np.all(tot_pred == 0)):
                 continue
             # if (np.round(acc,3) == 0.647):
             #     continue
             if (np.round(acc,3) == 0.588):
                 continue
+
             if acc > best_acc:
                 print('\ncurrent best accuracy is: {}\n'.format(acc))
                 best_acc = acc
-                saved_model_name = os.path.join(model_dir, 'ct_pos_recognition_{:04d}_best.pth'.format(epoch))
+                saved_model_name = os.path.join(model_dir, 'fattyliver_task_{}_best.pth'.format(task_name))
                 torch.save(model.cpu().state_dict(), saved_model_name)
                 print('====> save model:\t{}'.format(saved_model_name))
 

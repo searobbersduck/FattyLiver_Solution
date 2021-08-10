@@ -52,8 +52,8 @@ def split_data_to_two_phase_one_case(series_path, out_dir):
     '''
     debug cmd: split_data_to_two_phase_one_case('../data/images_mr_filtered/1.3.12.2.1107.5.2.30.25245.2015120320185731080640838.0.0.0', '')
     '''
-    in_files1 = glob((series_path, '*.dcm'))
-    in_files2 = glob((series_path, '*.DCM'))
+    in_files1 = glob(os.path.join(series_path, '*.dcm'))
+    in_files2 = glob(os.path.join(series_path, '*.DCM'))
     in_files = in_files1 + in_files2
     echo_1_files = []
     echo_2_files = []
@@ -419,14 +419,11 @@ class FattyLiverClsDatasets(Dataset):
 
 class FattyLiverClsDatasetsDiff3D(Dataset):
     '''
-    输入数据的分辨率由train函数的输入统一到(512, 384, 32), 对应(x,y,z)
-    data_format: diff, phase1, phase2
-    condition: raw, mask, cut(after mask)
+    输入数据的分辨率统一到(512, 384, 16), 对应(x,y,z)
     '''
-    def __init__(self, data_root, config_file, crop_size, phase='train'):
+    def __init__(self, data_root, config_file, task_name, crop_size=[32, 384, 512], phase='train'):
         self.crop_size = crop_size
-        # self.data_format = data_format
-        # self.condition = condition
+        self.task_name = task_name
         self.image_files = []
         self.labels = []
 
@@ -445,97 +442,302 @@ class FattyLiverClsDatasetsDiff3D(Dataset):
                 if os.path.isdir(image_file) and os.path.exists(mask_file):                    
                     self.image_files.append(image_file)
                     self.labels.append(int(ss[1]))
-                    # self.masks.append(mask_file)
+                    self.masks.append(mask_file)
                 
             print('====> fatty liver count is:{}'.format(len(self.image_files)))
 
 
     def __getitem__(self, index):
-        # data_format = self.data_format
-        # condition = self.condition
+        task_name = self.task_name
         image_path = self.image_files[index]
         label = self.labels[index]
-        # mask = self.masks[index]
+        mask = self.masks[index]
 
         echo_1_file = os.path.join(image_path, 'echo_1.nii.gz')
         echo_2_file = os.path.join(image_path, 'echo_2.nii.gz')
+        # mask_file_id = mask+'.mha'
 
         image_1 = sitk.ReadImage(echo_1_file)
         image_2 = sitk.ReadImage(echo_2_file)
-        # mask_image = sitk.ReadImage(mask)
+        mask_image = sitk.ReadImage(mask)
 
         arr_1 = sitk.GetArrayFromImage(image_1)
         arr_2 = sitk.GetArrayFromImage(image_2)
-        # mask_arr = sitk.GetArrayFromImage(mask_image)
+        mask_arr = sitk.GetArrayFromImage(mask_image)
 
         arr_1 = np.array(arr_1, dtype=np.float32)
         arr_2 = np.array(arr_2, dtype=np.float32)
-        # mask_arr = np.array(mask_arr, dtype=np.float32)
+        mask_arr = np.array(mask_arr, dtype=np.float32)
         
-        # mask_z_len = mask_arr.shape[0]
-        # mask_arr = mask_arr[mask_z_len//2:,:,:]
-        
-        # if (condition == 'raw'):
-        #     arr_1 = arr_1
-        #     arr_2 = arr_2
-            
-        # if (condition == 'mask') or (condition == 'cut'):
-        #     arr_1 = arr_1*mask_arr
-        #     arr_2 = arr_2*mask_arr
+        mask_z_len = mask_arr.shape[0]
+        mask_arr = mask_arr[mask_z_len//2:,:,:]
 
-        # if condition == 'cut':
-        #     len = mask_arr.shape[0]
-        #     non_zero_layer_index = []
-        #     for i in range(len):
-        #         z_layer = mask_arr[i:i+1,:,:]
-        #         if  np.sum(z_layer)>0:
-        #             non_zero_layer_index.append(i)
+        #加mask过程
+        # arr_1 = arr_1*mask_arr
+        # arr_2 = arr_2*mask_arr
 
-        #     up = non_zero_layer_index[0]
-        #     down = non_zero_layer_index[-1]
-        #     cut = down-up
-        #     cut = int(cut*0.15)
-        #     up = up + cut
-        #     down = down - cut
-        #     arr_1 = arr_1[up:down+1,:,:]
-        #     arr_2 = arr_2[up:down+1,:,:]
+        #切肝过程
+        # len = mask_arr.shape[0]
+        # non_zero_layer_index = []
+        # for i in range(len):
+        #     z_layer = mask_arr[i:i+1,:,:]
+        #     if  np.sum(z_layer)>0:
+        #         non_zero_layer_index.append(i)
+        # up = non_zero_layer_index[0]
+        # down = non_zero_layer_index[-1]
+        # cut = down-up
+        # cut = int(cut*0.15)
+        # up = up + cut
+        # down = down - cut
+        # arr_1 = arr_1[up:down+1,:,:]
+        # arr_2 = arr_2[up:down+1,:,:]
 
-
-        # if data_format == 'diff':
-        #     diff_1_2 = arr_1 - arr_2
-        #     diff_1_2 = diff_1_2 - diff_1_2.min()
-        # if data_format == 'phase1':
-        #     diff_1_2 = arr_1
-        # elif data_format == 'phase2':
-        #     diff_1_2 = arr_2
-
+        # if task_name == 'cut_mask_diff':
         diff_1_2 = arr_1 - arr_2
         diff_1_2 = diff_1_2 - diff_1_2.min()
+        # elif task_name == 'cut_mask_phase1':
+        #     # arr_1 = arr_1*mask_arr
+        #     diff_1_2 = arr_1
+        # elif task_name == 'cut_mask_phase2':
+        #     # arr_2 = arr_2*mask_arr
+        #     diff_1_2 = arr_2
+
+
 
         diff_1_2_bg = np.zeros(self.crop_size, dtype=np.float32)
 
         boundary_z = min(diff_1_2.shape[0], diff_1_2_bg.shape[0])
-        back_boundary_z = diff_1_2.shape[0] - boundary_z 
         boundary_y = min(diff_1_2.shape[1], diff_1_2_bg.shape[1])
-        diff_1_2_bg[:boundary_z,:boundary_y,:] = diff_1_2[back_boundary_z:,:boundary_y,:]
         
-        # if diff_1_2_bg.shape[1] > self.crop_size[1]:
-        #     boundary_y_min_max = diff_1_2_bg.shape[1] - self.crop_size[1]
-        #     boundary_y_min = np.random.randint(0, boundary_y_min_max+1)
-        #     boundary_y_max = boundary_y_min + self.crop_size[1]
-        #     diff_1_2_bg[:boundary_z,:,:] = diff_1_2[:boundary_z,boundary_y_min:boundary_y_max,:]
-        # else:
-        #     diff_1_2_bg[:boundary_z,:boundary_y,:] = diff_1_2[:boundary_z,:boundary_y,:]
+        if diff_1_2_bg.shape[1] > self.crop_size[1]:
+            boundary_y_min_max = diff_1_2_bg.shape[1] - self.crop_size[1]
+            boundary_y_min = np.random.randint(0, boundary_y_min_max+1)
+            boundary_y_max = boundary_y_min + self.crop_size[1]
+            diff_1_2_bg[:boundary_z,:,:] = diff_1_2[:boundary_z,boundary_y_min:boundary_y_max,:]
+        else:
+            diff_1_2_bg[:boundary_z,:boundary_y,:] = diff_1_2[:boundary_z,:boundary_y,:]
 
         diff_tensor = torch.from_numpy(diff_1_2_bg).float()
         diff_tensor = diff_tensor.unsqueeze(0)
 
         return diff_tensor, label, image_path
 
+    def __len__(self):
+        return len(self.image_files)
+
+class FattyLiverClsDatasetsDiff3D2(Dataset):
+    '''
+    输入数据的分辨率统一到(512, 384, 16), 对应(x,y,z)
+    '''
+    def __init__(self, data_root, config_file, task_name, crop_size=[32, 384, 512], phase='train'):
+        self.crop_size = crop_size
+        self.task_name = task_name
+        self.image_files = []
+        self.labels = []
+
+        self.masks = []
+        mask_root = '../data/seg_task/renamed_masks'
+        
+        with open(config_file) as f:
+            for line in f.readlines():
+                line = line.strip()
+                if line is None or len(line) == 0:
+                    continue
+                ss = line.split('\t')
+
+                image_file = os.path.join(data_root, ss[0])
+                mask_file = os.path.join(mask_root,ss[0])+'.mha'
+                if os.path.isdir(image_file) and os.path.exists(mask_file):                    
+                    self.image_files.append(image_file)
+                    self.labels.append(int(ss[1]))
+                    self.masks.append(mask_file)
+                
+            print('====> fatty liver count is:{}'.format(len(self.image_files)))
+
+
+    def __getitem__(self, index):
+        # task_name = self.task_name
+        image_path = self.image_files[index]
+        label = self.labels[index]
+        mask = self.masks[index]
+
+        echo_1_file = os.path.join(image_path, 'echo_1.nii.gz')
+        echo_2_file = os.path.join(image_path, 'echo_2.nii.gz')
+        # mask_file_id = mask+'.mha'
+
+        image_1 = sitk.ReadImage(echo_1_file)
+        image_2 = sitk.ReadImage(echo_2_file)
+        mask_image = sitk.ReadImage(mask)
+
+        arr_1 = sitk.GetArrayFromImage(image_1)
+        arr_2 = sitk.GetArrayFromImage(image_2)
+        mask_arr = sitk.GetArrayFromImage(mask_image)
+
+        arr_1 = np.array(arr_1, dtype=np.float32)
+        arr_2 = np.array(arr_2, dtype=np.float32)
+        mask_arr = np.array(mask_arr, dtype=np.float32)
+        
+        #取mask&加mask
+        # mask_z_len = mask_arr.shape[0]
+        # mask_arr = mask_arr[mask_z_len//2:,:,:]
+        # arr_1 = arr_1*mask_arr
+        # arr_2 = arr_2*mask_arr
+
+        #切肝
+        #1.根据mask找z的上下界
+        # len = mask_arr.shape[0]
+        # non_zero_layer_index = []
+        # for i in range(len):
+        #     z_layer = mask_arr[i:i+1,:,:]
+        #     if  np.sum(z_layer)>0:
+        #         non_zero_layer_index.append(i)
+        # up = non_zero_layer_index[0]
+        # down = non_zero_layer_index[-1]
+        # cut = down-up
+        # cut = int(cut*0.15)
+        # up = up + cut
+        # down = down - cut
+             
+        #2.根据z切除上下各10%
+        # arr_1 = arr_1[up:down+1,:,:]
+        # arr_2 = arr_2[up:down+1,:,:]
+
+       
+        diff_1_2 = arr_1 - arr_2
+        diff_1_2 = diff_1_2 - diff_1_2.min()
+
+        # diff_1_2 = arr_1
+
+        # diff_1_2 = arr_2
+
+
+
+        diff_1_2_bg = np.zeros(self.crop_size, dtype=np.float32)
+
+        boundary_z = min(diff_1_2.shape[0], diff_1_2_bg.shape[0])
+        boundary_y = min(diff_1_2.shape[1], diff_1_2_bg.shape[1])
+        
+        if diff_1_2_bg.shape[1] > self.crop_size[1]:
+            boundary_y_min_max = diff_1_2_bg.shape[1] - self.crop_size[1]
+            boundary_y_min = np.random.randint(0, boundary_y_min_max+1)
+            boundary_y_max = boundary_y_min + self.crop_size[1]
+            diff_1_2_bg[:boundary_z,:,:] = diff_1_2[:boundary_z,boundary_y_min:boundary_y_max,:]
+        else:
+            diff_1_2_bg[:boundary_z,:boundary_y,:] = diff_1_2[:boundary_z,:boundary_y,:]
+
+        diff_tensor = torch.from_numpy(diff_1_2_bg).float()
+        diff_tensor = diff_tensor.unsqueeze(0)
+
+        return diff_tensor, label, image_path
 
     def __len__(self):
         return len(self.image_files)
 
+class FattyLiverClsDatasetsDiff3D3(Dataset):
+    '''
+    jupyter test func
+    '''
+    def __init__(self, data_root, config_file, task_name, crop_size=[32, 384, 512], phase='train'):
+        self.crop_size = crop_size
+        self.task_name = task_name
+        self.image_files = []
+        self.labels = []
+
+        self.masks = []
+        mask_root = '../data/seg_task/renamed_masks'
+        
+        with open(config_file) as f:
+            for line in f.readlines():
+                line = line.strip()
+                if line is None or len(line) == 0:
+                    continue
+                ss = line.split('\t')
+
+                image_file = os.path.join(data_root, ss[0])
+                mask_file = os.path.join(mask_root,ss[0])+'.mha'
+                if os.path.isdir(image_file) and os.path.exists(mask_file):                    
+                    self.image_files.append(image_file)
+                    self.labels.append(int(ss[1]))
+                    self.masks.append(mask_file)
+                
+            print('====> fatty liver count is:{}'.format(len(self.image_files)))
+
+
+    def __getitem__(self, index):
+        # task_name = self.task_name
+        image_path = self.image_files[index]
+        label = self.labels[index]
+        mask = self.masks[index]
+
+        echo_1_file = os.path.join(image_path, 'echo_1.nii.gz')
+        echo_2_file = os.path.join(image_path, 'echo_2.nii.gz')
+        # mask_file_id = mask+'.mha'
+
+        image_1 = sitk.ReadImage(echo_1_file)
+        image_2 = sitk.ReadImage(echo_2_file)
+        mask_image = sitk.ReadImage(mask)
+
+        arr_1 = sitk.GetArrayFromImage(image_1)
+        arr_2 = sitk.GetArrayFromImage(image_2)
+        mask_arr = sitk.GetArrayFromImage(mask_image)
+
+        arr_1 = np.array(arr_1, dtype=np.float32)
+        arr_2 = np.array(arr_2, dtype=np.float32)
+        mask_arr = np.array(mask_arr, dtype=np.float32)
+        
+        #Mask test
+        # mask_z_len = mask_arr.shape[0]
+        # mask_arr = mask_arr[mask_z_len//2:,:,:]
+        # arr_1 = arr_1*mask_arr
+        # arr_2 = arr_2*mask_arr
+
+        #Cut test(Mask test active)
+        # len = mask_arr.shape[0]
+        # non_zero_layer_index = []
+        # for i in range(len):
+        #     z_layer = mask_arr[i:i+1,:,:]
+        #     if  np.sum(z_layer)>0:
+        #         non_zero_layer_index.append(i)
+        # up = non_zero_layer_index[0]
+        # down = non_zero_layer_index[-1]
+        # cut = down-up
+        # cut = int(cut*0.15)
+        # up = up + cut
+        # down = down - cut
+        # arr_1 = arr_1[up:down+1,:,:]
+        # arr_2 = arr_2[up:down+1,:,:]
+
+        #Raw test
+        #1.diff
+        diff_1_2 = arr_1 - arr_2
+        diff_1_2 = diff_1_2 - diff_1_2.min()
+        #2.phase1
+        # diff_1_2 = arr_1
+        #3.phase2
+        # diff_1_2 = arr_2
+
+
+
+        diff_1_2_bg = np.zeros(self.crop_size, dtype=np.float32)
+
+        boundary_z = min(diff_1_2.shape[0], diff_1_2_bg.shape[0])
+        boundary_y = min(diff_1_2.shape[1], diff_1_2_bg.shape[1])
+        
+        if diff_1_2_bg.shape[1] > self.crop_size[1]:
+            boundary_y_min_max = diff_1_2_bg.shape[1] - self.crop_size[1]
+            boundary_y_min = np.random.randint(0, boundary_y_min_max+1)
+            boundary_y_max = boundary_y_min + self.crop_size[1]
+            diff_1_2_bg[:boundary_z,:,:] = diff_1_2[:boundary_z,boundary_y_min:boundary_y_max,:]
+        else:
+            diff_1_2_bg[:boundary_z,:boundary_y,:] = diff_1_2[:boundary_z,:boundary_y,:]
+
+        diff_tensor = torch.from_numpy(diff_1_2_bg).float()
+        diff_tensor = diff_tensor.unsqueeze(0)
+
+        return diff_tensor, label, image_path
+
+    def __len__(self):
+        return len(self.image_files)
 def test_FattyLiverClsDatasets():
     data_root = '../data/images_mr_filtered'
     config_file = '../data/config/config_train.txt'
@@ -549,7 +751,7 @@ def test_FattyLiverClsDatasets():
 def test_FattyLiverClsDatasetsDiff3D():
     data_root = '../data/experiment_0/0.ori'
     config_file = '../data/config/config_train.txt'
-    crop_size = [32, 384, 512]
+    crop_size = [16, 384, 512]
     ds = FattyLiverClsDatasetsDiff3D(data_root, config_file, crop_size)
     dataloader = DataLoader(ds, batch_size=2, shuffle=True, pin_memory=True)
     for index, (images, labels, names) in enumerate(dataloader):
